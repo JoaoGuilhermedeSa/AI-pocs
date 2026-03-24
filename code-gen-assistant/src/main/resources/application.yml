@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: code-gen-assistant
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen3.5:9b
+        options:
+          temperature: 0.2
+          num-predict: 4096
+
+server:
+  port: 8081

@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Code Gen Assistant</title>
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent-hover: #79bbff;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --success: #3fb950;
+      --error: #f85149;
+      --tag-bg: #21262d;
+      --tag-active: #1f6feb;
+      --radius: 8px;
+      --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+    }
+
+    header .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+
+    header .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 0;
+      height: calc(100vh - 57px);
+    }
+
+    /* ── Left panel ── */
+    .panel-left {
+      border-right: 1px solid var(--border);
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+      background: var(--surface);
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+
+    .lang-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .lang-btn {
+      background: var(--tag-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 7px 4px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: center;
+    }
+
+    .lang-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .lang-btn.active {
+      background: var(--tag-active);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 12px;
+      resize: vertical;
+      min-height: 140px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    textarea:focus { border-color: var(--accent); }
+    textarea::placeholder { color: var(--text-muted); }
+
+    .btn-generate {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-generate:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(13,17,23,0.3);
+      border-top-color: #0d1117;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .status {
+      font-size: 12px;
+      color: var(--text-muted);
+      min-height: 18px;
+      text-align: center;
+    }
+
+    .status.error { color: var(--error); }
+    .status.success { color: var(--success); }
+
+    /* ── Right panel ── */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .output-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .lang-badge {
+      background: var(--tag-active);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      display: none;
+    }
+
+    .btn-copy {
+      background: var(--tag-bg);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-copy:hover { border-color: var(--accent); color: var(--accent); }
+
+    .output-area {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+    }
+
+    pre {
+      margin: 0;
+      height: 100%;
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      line-height: 1.65;
+    }
+
+    pre code.hljs {
+      padding: 24px;
+      min-height: 100%;
+      background: var(--bg) !important;
+    }
+
+    .placeholder-text {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    .placeholder-text .icon { font-size: 48px; opacity: 0.3; }
+    .cursor-blink {
+      display: inline-block;
+      width: 2px;
+      height: 16px;
+      background: var(--accent);
+      margin-left: 2px;
+      vertical-align: middle;
+      animation: blink 1s step-start infinite;
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">&lt;/&gt; Code Gen</div>
+  <div class="subtitle">AI-powered code generation · Spring AI + Ollama</div>
+</header>
+
+<div class="main">
+
+  <!-- Left: controls -->
+  <div class="panel-left">
+
+    <div>
+      <label>Language</label>
+      <div class="lang-grid" id="langGrid"></div>
+    </div>
+
+    <div>
+      <label>Description</label>
+      <textarea id="description"
+                placeholder="Describe what you want to build…&#10;e.g. A function that validates an email address using regex"
+                rows="6"></textarea>
+    </div>
+
+    <button class="btn-generate" id="btnGenerate" onclick="generate()">
+      <span class="spinner" id="spinner"></span>
+      <span id="btnLabel">Generate Code</span>
+    </button>
+
+    <div class="status" id="status"></div>
+
+  </div>
+
+  <!-- Right: output -->
+  <div class="panel-right">
+    <div class="output-header">
+      <div class="output-title">
+        Output
+        <span class="lang-badge" id="langBadge"></span>
+      </div>
+      <button class="btn-copy" id="btnCopy" onclick="copyCode()">
+        <span>&#9112;</span> Copy
+      </button>
+    </div>
+    <div class="output-area" id="outputArea">
+      <div class="placeholder-text" id="placeholder">
+        <div class="icon">&#128187;</div>
+        <div>Select a language, describe your task, and click Generate</div>
+      </div>
+      <pre id="pre" style="display:none"><code id="codeOutput"></code></pre>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const LANGUAGES = [
+    'Java','Python','JavaScript','TypeScript',
+    'Go','Rust','C#','C++',
+    'Kotlin','Swift','SQL','Bash'
+  ];
+
+  const HLJS_LANG_MAP = {
+    'JavaScript': 'javascript', 'TypeScript': 'typescript',
+    'Java': 'java', 'Python': 'python', 'Go': 'go',
+    'Rust': 'rust', 'C#': 'csharp', 'C++': 'cpp',
+    'Kotlin': 'kotlin', 'Swift': 'swift', 'SQL': 'sql', 'Bash': 'bash'
+  };
+
+  let selectedLang = 'Java';
+  let isGenerating = false;
+  let rawOutput = '';
+
+  // Build language grid
+  const grid = document.getElementById('langGrid');
+  LANGUAGES.forEach(lang => {
+    const btn = document.createElement('button');
+    btn.className = 'lang-btn' + (lang === selectedLang ? ' active' : '');
+    btn.textContent = lang;
+    btn.dataset.lang = lang;
+    btn.onclick = () => selectLang(lang);
+    grid.appendChild(btn);
+  });
+
+  function selectLang(lang) {
+    selectedLang = lang;
+    grid.querySelectorAll('.lang-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.lang === lang));
+  }
+
+  function setLoading(loading) {
+    isGenerating = loading;
+    document.getElementById('spinner').style.display = loading ? 'block' : 'none';
+    document.getElementById('btnLabel').textContent = loading ? 'Generating…' : 'Generate Code';
+    document.getElementById('btnGenerate').disabled = loading;
+  }
+
+  function setStatus(msg, type = '') {
+    const el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status ' + type;
+  }
+
+  async function generate() {
+    const description = document.getElementById('description').value.trim();
+    if (!description) { setStatus('Please enter a description.', 'error'); return; }
+    if (isGenerating) return;
+
+    setLoading(true);
+    setStatus('Connecting to model…');
+    rawOutput = '';
+
+    // Show code area
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('pre').style.display = 'block';
+    const codeEl = document.getElementById('codeOutput');
+    codeEl.className = '';
+    codeEl.textContent = '';
+    codeEl.removeAttribute('data-highlighted');
+
+    // Show language badge
+    const badge = document.getElementById('langBadge');
+    badge.textContent = selectedLang;
+    badge.style.display = 'inline-block';
+
+    // Blinking cursor while streaming
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor-blink';
+    codeEl.appendChild(cursor);
+
+    try {
+      const response = await fetch('/api/codegen/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language: selectedLang, description })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      setStatus('Generating…');
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by double newlines
+        const events = buffer.split('\n\n');
+        buffer = events.pop(); // keep any incomplete trailing event
+
+        for (const block of events) {
+          let eventType = 'token';
+          let data = '';
+
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) {
+              eventType = line.slice(6).trim();
+            } else if (line.startsWith('data:')) {
+              data = line.slice(5);
+            }
+          }
+
+          if (eventType === 'done') {
+            break outer;
+          } else if (eventType === 'error') {
+            throw new Error(data);
+          } else {
+            rawOutput += data;
+            cursor.remove();
+            codeEl.textContent = rawOutput;
+            codeEl.appendChild(cursor);
+            document.getElementById('outputArea').scrollTop =
+              document.getElementById('outputArea').scrollHeight;
+          }
+        }
+      }
+
+      // Final: remove cursor, apply syntax highlighting
+      cursor.remove();
+      codeEl.textContent = rawOutput;
+      const hljsLang = HLJS_LANG_MAP[selectedLang] || 'plaintext';
+      codeEl.className = `language-${hljsLang}`;
+      hljs.highlightElement(codeEl);
+
+      setStatus('Done.', 'success');
+
+    } catch (err) {
+      cursor.remove();
+      setStatus('Error: ' + err.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyCode() {
+    if (!rawOutput) return;
+    navigator.clipboard.writeText(rawOutput).then(() => {
+      const btn = document.getElementById('btnCopy');
+      btn.innerHTML = '<span>&#10003;</span> Copied!';
+      setTimeout(() => { btn.innerHTML = '<span>&#9112;</span> Copy'; }, 2000);
+    });
+  }
+
+  // Ctrl+Enter to generate
+  document.getElementById('description').addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key === 'Enter') generate();
+  });
+</script>
+</body>
+</html>
