@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: rag-knowledge-base
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2.5:7b
+        options:
+          temperature: 0.1
+          num-predict: 2048
+      embedding:
+        model: nomic-embed-text:latest
+
+  # Allow large file uploads (PDFs etc.)
+  codec:
+    max-in-memory-size: 10MB
+
+server:
+  port: 8082

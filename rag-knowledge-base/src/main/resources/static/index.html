@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RAG Knowledge Base</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --border: #30363d;
+      --accent: #58a6ff;
+      --accent-hover: #79bbff;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --success: #3fb950;
+      --error: #f85149;
+      --warning: #d29922;
+      --radius: 8px;
+      --font-mono: 'Cascadia Code', 'Fira Code', monospace;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .subtitle { font-size: 12px; color: var(--text-muted); }
+
+    .main { flex: 1; display: grid; grid-template-columns: 400px 1fr; height: calc(100vh - 49px); }
+
+    /* ── LEFT: Knowledge Base ── */
+    .panel-left { border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--surface); overflow: hidden; }
+    .panel-title { padding: 14px 18px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .doc-count { background: var(--surface2); border-radius: 20px; padding: 2px 8px; font-size: 11px; color: var(--text-muted); }
+
+    .ingest-area { padding: 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+
+    .tabs { display: flex; gap: 4px; }
+    .tab { padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; background: transparent; border: 1px solid var(--border); color: var(--text-muted); transition: all 0.15s; }
+    .tab.active { background: var(--surface2); border-color: var(--accent); color: var(--text); }
+
+    .tab-content { display: none; flex-direction: column; gap: 8px; }
+    .tab-content.visible { display: flex; }
+
+    input[type=text], textarea {
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-family: inherit; font-size: 13px; padding: 8px 10px;
+      outline: none; transition: border-color 0.15s; width: 100%;
+    }
+    input[type=text]:focus, textarea:focus { border-color: var(--accent); }
+    input[type=text]::placeholder, textarea::placeholder { color: var(--text-muted); }
+    textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
+
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius); padding: 24px;
+      text-align: center; cursor: pointer; transition: all 0.15s; color: var(--text-muted); font-size: 13px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); color: var(--accent); }
+    .drop-zone input { display: none; }
+
+    .btn { padding: 8px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: background 0.15s; display: flex; align-items: center; gap: 6px; justify-content: center; }
+    .btn-primary { background: var(--accent); color: #0d1117; width: 100%; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-danger { background: transparent; border: 1px solid var(--border); color: var(--error); padding: 4px 10px; font-size: 11px; }
+    .btn-danger:hover { border-color: var(--error); background: rgba(248,81,73,0.1); }
+
+    .ingest-status { font-size: 12px; min-height: 16px; text-align: center; }
+    .ingest-status.error { color: var(--error); }
+    .ingest-status.success { color: var(--success); }
+
+    /* Doc list */
+    .doc-list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .doc-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 32px 0; }
+    .doc-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .doc-info { flex: 1; min-width: 0; }
+    .doc-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .doc-meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── RIGHT: Query ── */
+    .panel-right { display: flex; flex-direction: column; background: var(--bg); overflow: hidden; }
+
+    .query-input-area { padding: 16px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; gap: 10px; }
+    .query-input-area label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); }
+
+    .query-row { display: flex; gap: 8px; }
+    .query-row input { flex: 1; }
+    .btn-ask { padding: 8px 20px; background: var(--accent); color: #0d1117; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    .btn-ask:hover:not(:disabled) { background: var(--accent-hover); }
+    .btn-ask:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .answer-area { flex: 1; overflow-y: auto; padding: 24px; }
+    .answer-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; gap: 12px; }
+    .answer-placeholder .icon { font-size: 48px; opacity: 0.2; }
+
+    .answer-block { display: flex; flex-direction: column; gap: 16px; }
+    .question-bubble { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-size: 14px; font-weight: 500; }
+    .answer-text { font-size: 14px; line-height: 1.8; white-space: pre-wrap; color: var(--text); font-family: var(--font-mono); }
+    .cursor-blink { display: inline-block; width: 2px; height: 14px; background: var(--accent); margin-left: 2px; vertical-align: middle; animation: blink 1s step-start infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .query-status { font-size: 12px; color: var(--text-muted); min-height: 16px; }
+    .query-status.error { color: var(--error); }
+
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(13,17,23,0.3); border-top-color: #0d1117; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">&#128218; RAG Knowledge Base</div>
+  <div class="subtitle">Spring AI + Ollama + SimpleVectorStore</div>
+</header>
+
+<div class="main">
+
+  <!-- LEFT: ingest + doc list -->
+  <div class="panel-left">
+    <div class="panel-title">
+      Knowledge Base
+      <span class="doc-count" id="docCount">0 docs</span>
+    </div>
+
+    <div class="ingest-area">
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('text')">Paste Text</button>
+        <button class="tab" onclick="switchTab('file')">Upload File</button>
+      </div>
+
+      <!-- Text tab -->
+      <div class="tab-content visible" id="tab-text">
+        <input type="text" id="textTitle" placeholder="Document title"/>
+        <textarea id="textContent" placeholder="Paste your document content here…" rows="5"></textarea>
+        <button class="btn btn-primary" id="btnIngestText" onclick="ingestText()">
+          <span class="spinner" id="spinnerText"></span>
+          Add to Knowledge Base
+        </button>
+      </div>
+
+      <!-- File tab -->
+      <div class="tab-content" id="tab-file">
+        <input type="text" id="fileTitle" placeholder="Document title (optional)"/>
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <input type="file" id="fileInput" accept=".txt,.md,.pdf" onchange="handleFileSelect(this)"/>
+          <div id="dropLabel">&#128194; Drop a .txt, .md, or .pdf file here<br/><small>or click to browse</small></div>
+        </div>
+        <button class="btn btn-primary" id="btnIngestFile" onclick="ingestFile()" disabled>
+          <span class="spinner" id="spinnerFile"></span>
+          <span id="btnFileLabel">Select a file first</span>
+        </button>
+      </div>
+
+      <div class="ingest-status" id="ingestStatus"></div>
+    </div>
+
+    <div class="doc-list" id="docList">
+      <div class="doc-empty">No documents yet.<br/>Add some content above.</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: query -->
+  <div class="panel-right">
+    <div class="query-input-area">
+      <label>Ask a question</label>
+      <div class="query-row">
+        <input type="text" id="questionInput" placeholder="What does this document say about…" onkeydown="if(event.key==='Enter') ask()"/>
+        <button class="btn-ask" id="btnAsk" onclick="ask()">
+          <span class="spinner" id="spinnerAsk" style="border-top-color:#0d1117"></span>
+          Ask
+        </button>
+      </div>
+      <div class="query-status" id="queryStatus"></div>
+    </div>
+
+    <div class="answer-area" id="answerArea">
+      <div class="answer-placeholder" id="answerPlaceholder">
+        <div class="icon">&#129300;</div>
+        <div>Add documents to the knowledge base, then ask questions</div>
+      </div>
+      <div class="answer-block" id="answerBlock" style="display:none">
+        <div class="question-bubble" id="questionDisplay"></div>
+        <div class="answer-text" id="answerText"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let documents = [];
+  let selectedFile = null;
+  let isQuerying = false;
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) =>
+      t.classList.toggle('active', ['text','file'][i] === name));
+    document.getElementById('tab-text').classList.toggle('visible', name === 'text');
+    document.getElementById('tab-file').classList.toggle('visible', name === 'file');
+  }
+
+  // ── File select / drag-drop ───────────────────────────────────────────────
+  function handleFileSelect(input) {
+    if (input.files[0]) setSelectedFile(input.files[0]);
+  }
+
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) setSelectedFile(e.dataTransfer.files[0]);
+  });
+
+  function setSelectedFile(file) {
+    selectedFile = file;
+    document.getElementById('dropLabel').innerHTML = `&#128196; <strong>${file.name}</strong><br/><small>${(file.size/1024).toFixed(1)} KB</small>`;
+    document.getElementById('btnIngestFile').disabled = false;
+    document.getElementById('btnFileLabel').textContent = 'Add to Knowledge Base';
+  }
+
+  // ── Ingest text ───────────────────────────────────────────────────────────
+  async function ingestText() {
+    const title = document.getElementById('textTitle').value.trim() || 'Untitled';
+    const content = document.getElementById('textContent').value.trim();
+    if (!content) { setIngestStatus('Please enter some content.', 'error'); return; }
+
+    setIngestLoading('text', true);
+    try {
+      const res = await fetch('/api/rag/ingest/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content })
+      });
+      const doc = await res.json();
+      addDocument(doc);
+      document.getElementById('textTitle').value = '';
+      document.getElementById('textContent').value = '';
+      setIngestStatus(`Added "${doc.title}" (${doc.chunkCount} chunks)`, 'success');
+    } catch (e) {
+      setIngestStatus('Error: ' + e.message, 'error');
+    } finally {
+      setIngestLoading('text', false);
+    }
+  }
+
+  // ── Ingest file ───────────────────────────────────────────────────────────
+  async function ingestFile() {
+    if (!selectedFile) return;
+    const title = document.getElementById('fileTitle').value.trim();
+
+    setIngestLoading('file', true);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    if (title) formData.append('title', title);
+
+    try {
+      const res = await fetch('/api/rag/ingest/file', { method: 'POST', body: formData });
+      const doc = await res.json();
+      addDocument(doc);
+      selectedFile = null;
+      document.getElementById('fileTitle').value = '';
+      document.getElementById('dropLabel').innerHTML = '&#128194; Drop a .txt, .md, or .pdf file here<br/><small>or click to browse</small>';
+      document.getElementById('btnIngestFile').disabled = true;
+      document.getElementById('btnFileLabel').textContent = 'Select a file first';
+      setIngestStatus(`Added "${doc.title}" (${doc.chunkCount} chunks)`, 'success');
+    } catch (e) {
+      setIngestStatus('Error: ' + e.message, 'error');
+    } finally {
+      setIngestLoading('file', false);
+    }
+  }
+
+  // ── Query ─────────────────────────────────────────────────────────────────
+  async function ask() {
+    const question = document.getElementById('questionInput').value.trim();
+    if (!question || isQuerying) return;
+    if (documents.length === 0) { setQueryStatus('Add documents first.', 'error'); return; }
+
+    isQuerying = true;
+    document.getElementById('btnAsk').disabled = true;
+    document.getElementById('spinnerAsk').style.display = 'block';
+    setQueryStatus('Searching knowledge base…');
+
+    document.getElementById('answerPlaceholder').style.display = 'none';
+    document.getElementById('answerBlock').style.display = 'flex';
+    document.getElementById('questionDisplay').textContent = question;
+
+    const answerEl = document.getElementById('answerText');
+    answerEl.textContent = '';
+    let rawAnswer = '';
+
+    const cursor = document.createElement('span');
+    cursor.className = 'cursor-blink';
+    answerEl.appendChild(cursor);
+
+    try {
+      const response = await fetch('/api/rag/query/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      setQueryStatus('Generating answer…');
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop();
+
+        for (const block of events) {
+          let eventType = 'token', data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventType = line.slice(6).trim();
+            else if (line.startsWith('data:')) data = line.slice(5);
+          }
+          if (eventType === 'done') break outer;
+          if (eventType === 'error') throw new Error(data);
+          rawAnswer += data;
+          cursor.remove();
+          answerEl.textContent = rawAnswer;
+          answerEl.appendChild(cursor);
+          document.getElementById('answerArea').scrollTop = document.getElementById('answerArea').scrollHeight;
+        }
+      }
+
+      cursor.remove();
+      answerEl.textContent = rawAnswer;
+      setQueryStatus('');
+      document.getElementById('questionInput').value = '';
+    } catch (e) {
+      cursor.remove();
+      setQueryStatus('Error: ' + e.message, 'error');
+    } finally {
+      isQuerying = false;
+      document.getElementById('btnAsk').disabled = false;
+      document.getElementById('spinnerAsk').style.display = 'none';
+    }
+  }
+
+  // ── Delete document ───────────────────────────────────────────────────────
+  async function deleteDoc(sourceId) {
+    await fetch(`/api/rag/documents/${sourceId}`, { method: 'DELETE' });
+    documents = documents.filter(d => d.id !== sourceId);
+    renderDocList();
+  }
+
+  // ── UI helpers ────────────────────────────────────────────────────────────
+  function addDocument(doc) {
+    documents.push(doc);
+    renderDocList();
+  }
+
+  function renderDocList() {
+    const list = document.getElementById('docList');
+    document.getElementById('docCount').textContent = `${documents.length} doc${documents.length !== 1 ? 's' : ''}`;
+    if (documents.length === 0) {
+      list.innerHTML = '<div class="doc-empty">No documents yet.<br/>Add some content above.</div>';
+      return;
+    }
+    list.innerHTML = documents.map(d => `
+      <div class="doc-card">
+        <div class="doc-info">
+          <div class="doc-title" title="${d.title}">${d.title}</div>
+          <div class="doc-meta">${d.chunkCount} chunk${d.chunkCount !== 1 ? 's' : ''} · ${new Date(d.ingestedAt).toLocaleTimeString()}</div>
+        </div>
+        <button class="btn btn-danger" onclick="deleteDoc('${d.id}')">Remove</button>
+      </div>`).join('');
+  }
+
+  function setIngestStatus(msg, type = '') {
+    const el = document.getElementById('ingestStatus');
+    el.textContent = msg;
+    el.className = 'ingest-status ' + type;
+    if (type === 'success') setTimeout(() => { el.textContent = ''; el.className = 'ingest-status'; }, 4000);
+  }
+
+  function setQueryStatus(msg, type = '') {
+    const el = document.getElementById('queryStatus');
+    el.textContent = msg;
+    el.className = 'query-status ' + type;
+  }
+
+  function setIngestLoading(tab, loading) {
+    const spinner = document.getElementById(`spinner${tab === 'text' ? 'Text' : 'File'}`);
+    const btn = document.getElementById(`btnIngest${tab === 'text' ? 'Text' : 'File'}`);
+    spinner.style.display = loading ? 'block' : 'none';
+    btn.disabled = loading;
+  }
+</script>
+</body>
+</html>
