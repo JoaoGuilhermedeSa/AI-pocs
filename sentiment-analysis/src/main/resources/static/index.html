@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Sentiment Analysis</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; padding: 2rem; }
+        h1 { font-size: 1.6rem; margin-bottom: 0.25rem; color: #fff; }
+        .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+        .card { background: #1a1d26; border: 1px solid #2a2d3a; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        textarea {
+            width: 100%; min-height: 120px; background: #0f1117; border: 1px solid #2a2d3a;
+            border-radius: 8px; color: #e0e0e0; font-size: 1rem; padding: 0.75rem;
+            resize: vertical; font-family: inherit; outline: none;
+        }
+        textarea:focus { border-color: #5b6af0; }
+        .actions { display: flex; gap: 0.75rem; margin-top: 1rem; }
+        button {
+            padding: 0.6rem 1.4rem; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.95rem; font-weight: 600; transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        #analyzeBtn { background: #5b6af0; color: #fff; }
+        #clearBtn { background: #2a2d3a; color: #ccc; }
+        .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+        .stat { background: #0f1117; border-radius: 8px; padding: 0.9rem 1rem; }
+        .stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-bottom: 0.35rem; }
+        .stat-value { font-size: 1.2rem; font-weight: 700; }
+        .POSITIVE { color: #4ade80; }
+        .NEGATIVE { color: #f87171; }
+        .NEUTRAL  { color: #94a3b8; }
+        .MIXED    { color: #facc15; }
+        .emotions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+        .emotion-tag {
+            background: #2a2d3a; border-radius: 99px; padding: 0.25rem 0.7rem;
+            font-size: 0.8rem; color: #a0aec0;
+        }
+        .explanation { color: #a0aec0; font-size: 0.92rem; line-height: 1.5; }
+        #result { display: none; }
+        #spinner { display: none; color: #888; font-size: 0.9rem; margin-top: 0.75rem; }
+        #error { display: none; color: #f87171; margin-top: 0.75rem; font-size: 0.9rem; }
+        .score-bar-wrap { background: #0f1117; border-radius: 8px; padding: 0.9rem 1rem; }
+        .score-bar-bg { background: #2a2d3a; border-radius: 99px; height: 8px; margin-top: 0.5rem; }
+        .score-bar-fill { height: 8px; border-radius: 99px; background: #5b6af0; transition: width 0.5s ease; }
+    </style>
+</head>
+<body>
+<h1>Sentiment Analysis</h1>
+<p class="subtitle">Multi-language · Powered by Ollama + Spring AI</p>
+
+<div class="card">
+    <textarea id="textInput" placeholder="Enter text in any language…&#10;&#10;e.g. 'This product exceeded all my expectations!'&#10;     'Estoy muy decepcionado con este servicio.'&#10;     'Le film était correct, ni bon ni mauvais.'"></textarea>
+    <div class="actions">
+        <button id="analyzeBtn" onclick="analyze()">Analyze</button>
+        <button id="clearBtn" onclick="clear()">Clear</button>
+    </div>
+    <div id="spinner">Analyzing…</div>
+    <div id="error"></div>
+</div>
+
+<div class="card" id="result">
+    <div class="result-grid">
+        <div class="stat">
+            <div class="stat-label">Language</div>
+            <div class="stat-value" id="resLanguage">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Sentiment</div>
+            <div class="stat-value" id="resSentiment">—</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Confidence</div>
+            <div class="stat-value" id="resConfidence">—</div>
+        </div>
+        <div class="score-bar-wrap">
+            <div class="stat-label">Score</div>
+            <div class="stat-value" id="resScore">—</div>
+            <div class="score-bar-bg"><div class="score-bar-fill" id="scoreBar" style="width:0%"></div></div>
+        </div>
+    </div>
+    <div class="emotions" id="resEmotions"></div>
+    <div class="explanation" id="resExplanation"></div>
+</div>
+
+<script>
+    async function analyze() {
+        const text = document.getElementById('textInput').value.trim();
+        if (!text) return;
+
+        const btn = document.getElementById('analyzeBtn');
+        btn.disabled = true;
+        document.getElementById('spinner').style.display = 'block';
+        document.getElementById('error').style.display = 'none';
+        document.getElementById('result').style.display = 'none';
+
+        try {
+            const res = await fetch('/api/sentiment/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            render(data);
+        } catch (e) {
+            const err = document.getElementById('error');
+            err.textContent = 'Error: ' + e.message;
+            err.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            document.getElementById('spinner').style.display = 'none';
+        }
+    }
+
+    function render(d) {
+        document.getElementById('resLanguage').textContent = d.language;
+
+        const sent = document.getElementById('resSentiment');
+        sent.textContent = d.sentiment;
+        sent.className = 'stat-value ' + d.sentiment;
+
+        document.getElementById('resConfidence').textContent = d.confidence;
+        document.getElementById('resScore').textContent = (d.score * 100).toFixed(0) + '%';
+        document.getElementById('scoreBar').style.width = (d.score * 100) + '%';
+
+        const emotionsEl = document.getElementById('resEmotions');
+        emotionsEl.innerHTML = (d.emotions || []).map(e =>
+            `<span class="emotion-tag">${e}</span>`
+        ).join('');
+
+        document.getElementById('resExplanation').textContent = d.explanation;
+        document.getElementById('result').style.display = 'block';
+    }
+
+    function clear() {
+        document.getElementById('textInput').value = '';
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('error').style.display = 'none';
+    }
+
+    document.getElementById('textInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.ctrlKey) analyze();
+    });
+</script>
+</body>
+</html>
