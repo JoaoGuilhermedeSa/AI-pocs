@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Content Moderation</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #0f1117; color: #e0e0e0; min-height: 100vh; padding: 2rem; }
+        h1 { font-size: 1.6rem; color: #fff; margin-bottom: 0.2rem; }
+        .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 2rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; }
+        .tab {
+            padding: 0.5rem 1.2rem; border-radius: 8px; cursor: pointer;
+            border: 1px solid #2a2d3a; background: #1a1d26; color: #888; font-size: 0.9rem;
+        }
+        .tab.active { background: #5b6af0; border-color: #5b6af0; color: #fff; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .card { background: #1a1d26; border: 1px solid #2a2d3a; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        textarea {
+            width: 100%; min-height: 130px; background: #0f1117; border: 1px solid #2a2d3a;
+            border-radius: 8px; color: #e0e0e0; font-size: 1rem; padding: 0.75rem;
+            resize: vertical; font-family: inherit; outline: none;
+        }
+        textarea:focus { border-color: #5b6af0; }
+        .drop-zone {
+            border: 2px dashed #2a2d3a; border-radius: 10px; padding: 2.5rem 1rem;
+            text-align: center; color: #666; cursor: pointer; transition: border-color 0.2s;
+        }
+        .drop-zone:hover, .drop-zone.drag { border-color: #5b6af0; color: #aaa; }
+        .drop-zone input { display: none; }
+        .file-name { margin-top: 0.75rem; font-size: 0.85rem; color: #aaa; }
+        button {
+            margin-top: 1rem; padding: 0.6rem 1.5rem; border: none; border-radius: 8px;
+            background: #5b6af0; color: #fff; font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .spinner { display: none; color: #888; font-size: 0.9rem; margin-top: 0.75rem; }
+        .error { display: none; color: #f87171; margin-top: 0.75rem; font-size: 0.9rem; }
+        /* Result */
+        .result { display: none; }
+        .verdict-badge {
+            display: inline-block; padding: 0.4rem 1.1rem; border-radius: 99px;
+            font-weight: 700; font-size: 1rem; margin-bottom: 1rem;
+        }
+        .SAFE { background: #14532d; color: #4ade80; }
+        .UNSAFE { background: #450a0a; color: #f87171; }
+        .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+        .meta { background: #0f1117; border-radius: 8px; padding: 0.75rem 1rem; }
+        .meta-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin-bottom: 0.3rem; }
+        .meta-value { font-size: 1rem; font-weight: 600; }
+        .categories { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+        .cat-tag { background: #2a2d3a; border-radius: 99px; padding: 0.2rem 0.65rem; font-size: 0.78rem; color: #a0aec0; }
+        .cat-tag.harmful { background: #450a0a; color: #f87171; }
+        .explanation { color: #a0aec0; font-size: 0.9rem; line-height: 1.5; }
+        .section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: #666; margin: 1rem 0 0.5rem; }
+        .divider { border: none; border-top: 1px solid #2a2d3a; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+<h1>Content Moderation</h1>
+<p class="subtitle">Text · Image · Video (frames + audio) — Powered by Ollama + Spring AI</p>
+
+<div class="tabs">
+    <div class="tab active" onclick="switchTab('text', this)">Text</div>
+    <div class="tab" onclick="switchTab('image', this)">Image</div>
+    <div class="tab" onclick="switchTab('video', this)">Video</div>
+</div>
+
+<!-- TEXT -->
+<div class="panel active" id="panel-text">
+    <div class="card">
+        <textarea id="textInput" placeholder="Enter text to moderate…"></textarea>
+        <button onclick="moderateText()" id="textBtn">Analyze</button>
+        <div class="spinner" id="textSpinner">Analyzing…</div>
+        <div class="error" id="textError"></div>
+    </div>
+    <div class="card result" id="textResult"></div>
+</div>
+
+<!-- IMAGE -->
+<div class="panel" id="panel-image">
+    <div class="card">
+        <div class="drop-zone" id="imgDrop" onclick="document.getElementById('imgFile').click()"
+             ondragover="event.preventDefault(); this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="handleDrop(event, 'imgFile', 'imgName')">
+            <input type="file" id="imgFile" accept="image/*" onchange="showName('imgFile','imgName')"/>
+            Drop image here or click to select<br/><small>JPEG · PNG · WebP</small>
+            <div class="file-name" id="imgName"></div>
+        </div>
+        <button onclick="moderateImage()" id="imgBtn">Analyze Image</button>
+        <div class="spinner" id="imgSpinner">Analyzing…</div>
+        <div class="error" id="imgError"></div>
+    </div>
+    <div class="card result" id="imgResult"></div>
+</div>
+
+<!-- VIDEO -->
+<div class="panel" id="panel-video">
+    <div class="card">
+        <div class="drop-zone" id="vidDrop" onclick="document.getElementById('vidFile').click()"
+             ondragover="event.preventDefault(); this.classList.add('drag')"
+             ondragleave="this.classList.remove('drag')"
+             ondrop="handleDrop(event, 'vidFile', 'vidName')">
+            <input type="file" id="vidFile" accept="video/*" onchange="showName('vidFile','vidName')"/>
+            Drop video here or click to select<br/><small>MP4 · WebM · AVI · MOV</small>
+            <div class="file-name" id="vidName"></div>
+        </div>
+        <button onclick="moderateVideo()" id="vidBtn">Analyze Video</button>
+        <div class="spinner" id="vidSpinner">Extracting frames &amp; audio, analyzing…</div>
+        <div class="error" id="vidError"></div>
+    </div>
+    <div class="card result" id="vidResult"></div>
+</div>
+
+<script>
+function switchTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+}
+
+function showName(inputId, nameId) {
+    const f = document.getElementById(inputId).files[0];
+    document.getElementById(nameId).textContent = f ? f.name : '';
+}
+
+function handleDrop(ev, inputId, nameId) {
+    ev.preventDefault();
+    ev.currentTarget.classList.remove('drag');
+    const file = ev.dataTransfer.files[0];
+    if (!file) return;
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    document.getElementById(inputId).files = dt.files;
+    document.getElementById(nameId).textContent = file.name;
+}
+
+function renderVerdict(data, el) {
+    const isUnsafe = data.verdict === 'UNSAFE';
+    const categories = data.categories || [];
+    el.innerHTML = `
+        <span class="verdict-badge ${data.verdict}">${data.verdict}</span>
+        <div class="meta-grid">
+            <div class="meta"><div class="meta-label">Severity</div><div class="meta-value">${data.severity}</div></div>
+            <div class="meta"><div class="meta-label">Confidence</div><div class="meta-value">${(data.confidence * 100).toFixed(0)}%</div></div>
+        </div>
+        <div class="categories">${categories.map(c =>
+            `<span class="cat-tag ${c !== 'NONE' ? 'harmful' : ''}">${c}</span>`).join('')}</div>
+        <div class="explanation">${data.explanation}</div>
+    `;
+    el.style.display = 'block';
+}
+
+function renderVideo(data, el) {
+    el.innerHTML = `
+        <span class="verdict-badge ${data.verdict}">${data.verdict}</span>
+        <div class="meta-grid">
+            <div class="meta"><div class="meta-label">Severity</div><div class="meta-value">${data.severity}</div></div>
+            <div class="meta"><div class="meta-label">Confidence</div><div class="meta-value">${(data.confidence * 100).toFixed(0)}%</div></div>
+            <div class="meta"><div class="meta-label">Frames Analyzed</div><div class="meta-value">${data.framesAnalyzed}</div></div>
+        </div>
+        <div class="categories">${(data.categories||[]).map(c =>
+            `<span class="cat-tag ${c !== 'NONE' ? 'harmful' : ''}">${c}</span>`).join('')}</div>
+        <div class="explanation">${data.explanation}</div>
+        <hr class="divider"/>
+        <div class="section-title">Visual Analysis</div>
+        <div class="meta-grid">
+            <div class="meta"><div class="meta-label">Verdict</div><div class="meta-value">${data.visualResult.verdict}</div></div>
+            <div class="meta"><div class="meta-label">Severity</div><div class="meta-value">${data.visualResult.severity}</div></div>
+        </div>
+        <div class="explanation">${data.visualResult.explanation}</div>
+        <hr class="divider"/>
+        <div class="section-title">Audio Analysis</div>
+        <div class="meta-grid">
+            <div class="meta"><div class="meta-label">Verdict</div><div class="meta-value">${data.audioResult.verdict}</div></div>
+            <div class="meta"><div class="meta-label">Severity</div><div class="meta-value">${data.audioResult.severity}</div></div>
+        </div>
+        <div class="explanation">${data.audioResult.explanation}</div>
+    `;
+    el.style.display = 'block';
+}
+
+async function moderateText() {
+    const text = document.getElementById('textInput').value.trim();
+    if (!text) return;
+    await call('/api/moderation/text', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text})},
+        'textBtn', 'textSpinner', 'textError', 'textResult', renderVerdict);
+}
+
+async function moderateImage() {
+    const file = document.getElementById('imgFile').files[0];
+    if (!file) return;
+    const form = new FormData(); form.append('file', file);
+    await call('/api/moderation/image', {method:'POST', body: form},
+        'imgBtn', 'imgSpinner', 'imgError', 'imgResult', renderVerdict);
+}
+
+async function moderateVideo() {
+    const file = document.getElementById('vidFile').files[0];
+    if (!file) return;
+    const form = new FormData(); form.append('file', file);
+    await call('/api/moderation/video', {method:'POST', body: form},
+        'vidBtn', 'vidSpinner', 'vidError', 'vidResult', renderVideo);
+}
+
+async function call(url, opts, btnId, spinnerId, errId, resultId, renderer) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = true;
+    document.getElementById(spinnerId).style.display = 'block';
+    document.getElementById(errId).style.display = 'none';
+    document.getElementById(resultId).style.display = 'none';
+    try {
+        const res = await fetch(url, opts);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        renderer(data, document.getElementById(resultId));
+    } catch(e) {
+        const err = document.getElementById(errId);
+        err.textContent = 'Error: ' + e.message;
+        err.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        document.getElementById(spinnerId).style.display = 'none';
+    }
+}
+</script>
+</body>
+</html>

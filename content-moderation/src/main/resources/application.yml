@@ -1,0 +1,30 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: content-moderation
+  ai:
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2.5:7b
+        options:
+          temperature: 0.1
+          num-predict: 512
+  codec:
+    max-in-memory-size: 256MB
+
+moderation:
+  models:
+    text: qwen2.5:7b
+    vision: llava:7b
+    whisper: karanchopda333/whisper
+  ffmpeg:
+    path: ffmpeg           # must be on PATH or set full path e.g. C:/ffmpeg/bin/ffmpeg
+    max-frames: 1000       # max frames to extract per video
+    fps: 1                 # frames per second to sample
+  whisper:
+    script: transcribe.py  # path to transcribe.py (relative to working dir or absolute)
+    model: tiny            # tiny | base | small | medium | large-v3
+    device: cuda           # cuda | cpu
