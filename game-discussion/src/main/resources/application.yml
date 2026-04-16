@@ -1,0 +1,29 @@
+server:
+  port: 8080
+
+discussion:
+  system-prompt: >
+    You are a game design expert participating in a collaborative discussion about game design ideas.
+    Be thoughtful, creative, and opinionated. Build on or respectfully challenge prior points in the
+    conversation. Draw from game mechanics, player psychology, and real-world examples. Keep each
+    response focused — roughly 2 to 4 paragraphs. Do not repeat greetings or meta-commentary.
+
+  ollama:
+    enabled: true
+    display-name: QWEN 2.5
+    model: qwen3.5:9b
+    url: http://localhost:11434
+
+  claude-cli:
+    enabled: true
+    display-name: Claude
+    command: claude
+    args:
+      - "-p"
+
+  gemini-cli:
+    enabled: true
+    display-name: Gemini
+    command: gemini.cmd
+    args:
+      - "-p"

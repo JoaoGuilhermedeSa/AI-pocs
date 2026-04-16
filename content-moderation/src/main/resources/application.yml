@@ -24,6 +24,8 @@ moderation:
     path: ffmpeg           # must be on PATH or set full path e.g. C:/ffmpeg/bin/ffmpeg
     max-frames: 1000       # max frames to extract per video
     fps: 1                 # frames per second to sample
+  nsfw:
+    script: detect_nsfw.py
   whisper:
     script: transcribe.py  # path to transcribe.py (relative to working dir or absolute)
     model: tiny            # tiny | base | small | medium | large-v3

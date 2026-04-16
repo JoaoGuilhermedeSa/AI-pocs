@@ -22,7 +22,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 @Service
 public class ImageModerationService {
@@ -32,6 +34,7 @@ public class ImageModerationService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final NsfwDetectionService nsfwDetectionService;
 
     @Value("${moderation.models.vision}")
     private String visionModel;
@@ -39,19 +42,55 @@ public class ImageModerationService {
     @Value("${spring.ai.ollama.base-url}")
     private String ollamaBaseUrl;
 
+    public ImageModerationService(NsfwDetectionService nsfwDetectionService) {
+        this.nsfwDetectionService = nsfwDetectionService;
+    }
+
     public Mono<ModerationResponse> moderate(byte[] imageBytes, String mimeType) {
-        return Mono.fromCallable(() -> {
-            byte[] resized = resizeIfNeeded(imageBytes);
-            String base64Image = Base64.getEncoder().encodeToString(resized);
-            return callOllama(base64Image);
-        }).subscribeOn(Schedulers.boundedElastic());
+        return Mono.fromCallable(() -> resizeIfNeeded(imageBytes))
+                .subscribeOn(Schedulers.boundedElastic())
+                .flatMap(resized -> {
+                    String base64Image = Base64.getEncoder().encodeToString(resized);
+
+                    Mono<ModerationResponse> llavaMono = Mono.fromCallable(() -> callOllama(base64Image))
+                            .subscribeOn(Schedulers.boundedElastic());
+
+                    Mono<NsfwDetectionService.NsfwResult> nsfwMono =
+                            nsfwDetectionService.detect(resized, "jpg");
+
+                    // Run llava and NudeNet in parallel, merge results
+                    return Mono.zip(llavaMono, nsfwMono)
+                            .map(tuple -> merge(tuple.getT1(), tuple.getT2()));
+                });
+    }
+
+    private ModerationResponse merge(ModerationResponse llava, NsfwDetectionService.NsfwResult nsfw) {
+        if (!nsfw.isNsfw()) return llava;
+
+        // NudeNet detected explicit content — override to UNSAFE regardless of llava
+        log.info("NudeNet override: ADULT content detected (score={} labels={})", nsfw.score(), nsfw.labels());
+
+        List<String> categories = new ArrayList<>(llava.categories());
+        if (!categories.contains("ADULT")) {
+            categories.remove("NONE");
+            categories.add("ADULT");
+        }
+
+        String severity = nsfw.score() >= 0.85 ? "HIGH" : nsfw.score() >= 0.6 ? "MEDIUM" : "LOW";
+
+        return new ModerationResponse(
+                "UNSAFE",
+                categories,
+                severity,
+                nsfw.score(),
+                "Explicit adult content detected by NudeNet classifier."
+        );
     }
 
     private ModerationResponse callOllama(String base64Image) throws Exception {
         String prompt = AiConfig.VISION_SYSTEM_PROMPT +
                 "\n\nAnalyze this image for harmful content and respond with the required JSON.";
 
-        // Build JSON with ObjectMapper to avoid any escaping/corruption in the base64 string
         var bodyNode = objectMapper.createObjectNode();
         bodyNode.put("model", visionModel);
         bodyNode.put("prompt", prompt);
@@ -89,7 +128,6 @@ public class ImageModerationService {
         int w = original.getWidth();
         int h = original.getHeight();
 
-        // Resize if needed
         BufferedImage source = original;
         if (w > MAX_DIM || h > MAX_DIM) {
             double scale = (double) MAX_DIM / Math.max(w, h);
@@ -104,8 +142,6 @@ public class ImageModerationService {
             source = resized;
         }
 
-        // Always flatten to RGB (removes alpha channel) and encode as JPEG with explicit quality.
-        // llava:13b crashes on alpha-channel PNG — JPEG is safest.
         BufferedImage rgb = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_RGB);
         Graphics2D g = rgb.createGraphics();
         g.setColor(Color.WHITE);
@@ -124,7 +160,7 @@ public class ImageModerationService {
         }
         writer.dispose();
 
-        log.info("Image prepared for llava: {}x{}, {} bytes", rgb.getWidth(), rgb.getHeight(), out.size());
+        log.info("Image prepared: {}x{}, {} bytes", rgb.getWidth(), rgb.getHeight(), out.size());
         return out.toByteArray();
     }
 
