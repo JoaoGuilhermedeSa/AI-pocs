@@ -1,0 +1,16 @@
+server:
+  port: 8082
+
+spring:
+  codec:
+    max-in-memory-size: 20MB   # allow large image uploads
+
+vision:
+  ollama:
+    url: "http://localhost:11434"
+    model: "llava:7b"
+  comfyui:
+    url: "http://127.0.0.1:8188"
+  storage:
+    temp-dir: "${java.io.tmpdir}/vision-poc"
+    max-age-minutes: 60

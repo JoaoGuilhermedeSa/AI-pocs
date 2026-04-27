@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Multimodal Vision</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f0f13; color: #e0e0e0; height: 100vh; display: flex; flex-direction: column; }
+
+  header { padding: 14px 20px; background: #1a1a24; border-bottom: 1px solid #2a2a3a; display: flex; align-items: center; gap: 20px; }
+  header h1 { font-size: 1.1rem; color: #a78bfa; }
+  .tabs { display: flex; gap: 4px; }
+  .tab { padding: 6px 18px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; border: 1px solid transparent; transition: all 0.15s; }
+  .tab.active { background: #6d28d9; color: #fff; }
+  .tab.inactive { color: #888; border-color: #2a2a3a; }
+  .tab.inactive:hover { background: #1e1e2e; color: #ccc; }
+
+  .page { display: none; flex: 1; overflow: hidden; }
+  .page.active { display: flex; }
+
+  /* ── Analyze tab ── */
+  .analyze-layout { display: flex; flex: 1; overflow: hidden; gap: 0; }
+
+  .upload-panel { width: 340px; min-width: 280px; padding: 20px; border-right: 1px solid #2a2a3a; display: flex; flex-direction: column; gap: 14px; }
+  .drop-zone { flex: 1; border: 2px dashed #3a3a50; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: border-color 0.2s; min-height: 200px; position: relative; overflow: hidden; }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #6d28d9; }
+  .drop-zone img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .drop-zone .placeholder { color: #555; font-size: 0.85rem; text-align: center; padding: 16px; pointer-events: none; }
+  .drop-zone .placeholder svg { margin-bottom: 8px; opacity: 0.3; }
+  input[type=file] { display: none; }
+
+  .prompt-panel { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
+  textarea { width: 100%; background: #13131c; border: 1px solid #2a2a3a; border-radius: 8px; padding: 10px 12px; color: #e0e0e0; font-size: 0.85rem; resize: vertical; font-family: inherit; }
+  textarea:focus { outline: none; border-color: #6d28d9; }
+
+  .response-area { flex: 1; background: #13131c; border: 1px solid #2a2a3a; border-radius: 8px; padding: 14px; overflow-y: auto; font-size: 0.88rem; line-height: 1.7; white-space: pre-wrap; color: #d0d0e0; }
+  .cursor { display: inline-block; width: 8px; height: 14px; background: #a78bfa; animation: blink 1s step-end infinite; vertical-align: text-bottom; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ── Generate tab ── */
+  .generate-layout { display: flex; flex: 1; overflow: hidden; }
+
+  .gen-controls { width: 340px; min-width: 280px; padding: 20px; border-right: 1px solid #2a2a3a; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+  .gen-controls label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.06em; display: block; margin-bottom: 4px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  input[type=number] { width: 100%; background: #13131c; border: 1px solid #2a2a3a; border-radius: 6px; padding: 7px 10px; color: #e0e0e0; font-size: 0.85rem; }
+  input[type=number]:focus { outline: none; border-color: #6d28d9; }
+
+  .gen-output { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; overflow: hidden; }
+  .gen-placeholder { color: #333; font-size: 0.9rem; text-align: center; }
+  .progress-bar-wrap { width: 100%; max-width: 480px; }
+  .progress-label { font-size: 0.8rem; color: #888; margin-bottom: 6px; text-align: center; }
+  .progress-bar { height: 4px; background: #1e1e2e; border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #6d28d9, #a78bfa); border-radius: 2px; transition: width 0.3s; animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .gen-image { max-width: 100%; max-height: calc(100vh - 220px); border-radius: 10px; border: 1px solid #2a2a3a; box-shadow: 0 8px 32px #0008; }
+
+  button { border: none; border-radius: 6px; padding: 9px 18px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.15s; width: 100%; }
+  .btn-primary { background: #6d28d9; color: #fff; }
+  .btn-primary:hover { background: #7c3aed; }
+  .btn-primary:disabled { background: #3a2060; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🔮 Multimodal Vision</h1>
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('analyze')">Analyze Image</div>
+    <div class="tab inactive" onclick="switchTab('generate')">Generate Image</div>
+  </div>
+</header>
+
+<!-- ANALYZE TAB -->
+<div class="page active" id="page-analyze">
+  <div class="analyze-layout">
+    <div class="upload-panel">
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="placeholder" id="dropPlaceholder">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+            <path d="M21 15l-5-5L5 21"/>
+          </svg>
+          <div>Drop image here<br>or click to upload</div>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" onchange="onFileSelect(event)">
+    </div>
+
+    <div class="prompt-panel">
+      <textarea id="analyzePrompt" rows="3" placeholder="Ask anything about the image…
+e.g. Describe this image in detail
+e.g. What cards are visible? Estimate their stats.
+e.g. Is the art style consistent?">Describe this image in detail.</textarea>
+      <button class="btn-primary" id="analyzeBtn" onclick="startAnalysis()" disabled>Analyze</button>
+      <div class="response-area" id="responseArea"></div>
+    </div>
+  </div>
+</div>
+
+<!-- GENERATE TAB -->
+<div class="page" id="page-generate">
+  <div class="generate-layout">
+    <div class="gen-controls">
+      <div>
+        <label>Prompt</label>
+        <textarea id="genPrompt" rows="6" placeholder="Describe the image you want to generate…
+e.g. A dark fantasy card game interface, gothic art style, glowing runes, oil painting">A red apple on a wooden table, photorealistic, soft natural lighting</textarea>
+      </div>
+      <div class="row">
+        <div><label>Width</label><input type="number" id="genWidth" value="1024" step="64" min="512" max="2048"></div>
+        <div><label>Height</label><input type="number" id="genHeight" value="1024" step="64" min="512" max="2048"></div>
+      </div>
+      <div class="row">
+        <div><label>Steps</label><input type="number" id="genSteps" value="20" min="10" max="50"></div>
+        <div><label>Seed (0 = random)</label><input type="number" id="genSeed" value="0"></div>
+      </div>
+      <button class="btn-primary" id="genBtn" onclick="startGeneration()">Generate</button>
+    </div>
+
+    <div class="gen-output" id="genOutput">
+      <div class="gen-placeholder" id="genPlaceholder">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+        <p style="margin-top:10px">Generated image will appear here</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentImageId = null;
+
+// ── Tab switching ──
+function switchTab(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => { t.className = 'tab inactive'; });
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.className = 'tab active';
+}
+
+// ── Image upload ──
+function onDragOver(e) { e.preventDefault(); document.getElementById('dropZone').classList.add('drag-over'); }
+function onDragLeave() { document.getElementById('dropZone').classList.remove('drag-over'); }
+function onDrop(e) { e.preventDefault(); onDragLeave(); handleFile(e.dataTransfer.files[0]); }
+function onFileSelect(e) { handleFile(e.target.files[0]); }
+
+async function handleFile(file) {
+  if (!file) return;
+  const preview = document.createElement('img');
+  preview.src = URL.createObjectURL(file);
+  const zone = document.getElementById('dropZone');
+  document.getElementById('dropPlaceholder').style.display = 'none';
+  zone.querySelectorAll('img').forEach(i => i.remove());
+  zone.appendChild(preview);
+
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/vision/upload', { method: 'POST', body: form });
+  const data = await res.json();
+  currentImageId = data.imageId;
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+// ── Analyze ──
+async function startAnalysis() {
+  if (!currentImageId) return;
+  const prompt = document.getElementById('analyzePrompt').value.trim();
+  if (!prompt) return;
+
+  const area = document.getElementById('responseArea');
+  area.innerHTML = '<span class="cursor"></span>';
+  document.getElementById('analyzeBtn').disabled = true;
+
+  let buffer = '';
+  const res = await fetch('/api/vision/analyze', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageId: currentImageId, prompt })
+  });
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let raw = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    raw += dec.decode(value, { stream: true });
+    const lines = raw.split('\n');
+    raw = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      try {
+        const event = JSON.parse(line.slice(5).trim());
+        if (event.type === 'token') {
+          buffer += event.content;
+          area.innerHTML = escHtml(buffer) + '<span class="cursor"></span>';
+          area.scrollTop = area.scrollHeight;
+        } else if (event.type === 'done') {
+          area.querySelector('.cursor')?.remove();
+        } else if (event.type === 'error') {
+          area.innerHTML = '<span style="color:#f87171">Error: ' + escHtml(event.content) + '</span>';
+        }
+      } catch {}
+    }
+  }
+  document.getElementById('analyzeBtn').disabled = false;
+}
+
+// ── Generate ──
+async function startGeneration() {
+  const prompt = document.getElementById('genPrompt').value.trim();
+  if (!prompt) return;
+
+  const btn = document.getElementById('genBtn');
+  btn.disabled = true;
+
+  const output = document.getElementById('genOutput');
+  output.innerHTML = `
+    <div class="progress-bar-wrap">
+      <div class="progress-label" id="progressLabel">Queuing…</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
+    </div>`;
+
+  const req = {
+    prompt,
+    width:  parseInt(document.getElementById('genWidth').value)  || 1024,
+    height: parseInt(document.getElementById('genHeight').value) || 1024,
+    steps:  parseInt(document.getElementById('genSteps').value)  || 20,
+    seed:   parseInt(document.getElementById('genSeed').value)   || 0
+  };
+
+  const res = await fetch('/api/vision/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req)
+  });
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let raw = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    raw += dec.decode(value, { stream: true });
+    const lines = raw.split('\n');
+    raw = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      try {
+        const event = JSON.parse(line.slice(5).trim());
+        if (event.type === 'progress') {
+          const lbl = document.getElementById('progressLabel');
+          if (lbl) lbl.textContent = event.content;
+        } else if (event.type === 'image') {
+          output.innerHTML = `<img class="gen-image" src="${event.content}?t=${Date.now()}" alt="Generated">`;
+        } else if (event.type === 'error') {
+          output.innerHTML = `<div style="color:#f87171;font-size:.9rem">Error: ${escHtml(event.content)}</div>`;
+        }
+      } catch {}
+    }
+  }
+  btn.disabled = false;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
