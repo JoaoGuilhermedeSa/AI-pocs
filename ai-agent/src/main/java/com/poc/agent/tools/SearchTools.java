@@ -1,0 +1,79 @@
+package com.poc.agent.tools;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.poc.agent.config.AgentProperties;
+import com.poc.agent.safety.AgentContext;
+import com.poc.agent.safety.AgentTrace;
+import com.poc.agent.safety.SafetyGuard;
+import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Component
+public class SearchTools {
+
+    private final WebClient webClient;
+    private final AgentProperties props;
+    private final AgentTrace trace;
+    private final AgentContext agentContext;
+    private final SafetyGuard safetyGuard;
+
+    public SearchTools(WebClient webClient, AgentProperties props, AgentTrace trace,
+                       AgentContext agentContext, SafetyGuard safetyGuard) {
+        this.webClient = webClient;
+        this.props = props;
+        this.trace = trace;
+        this.agentContext = agentContext;
+        this.safetyGuard = safetyGuard;
+    }
+
+    @Tool(description = """
+            Search the web using SearXNG. Returns titles, URLs, and snippets for the top results.
+            Use specific, targeted queries for best results. Call multiple times with different queries
+            to cover a topic from different angles.
+            """)
+    public String webSearch(String query) {
+        safetyGuard.checkIterations();
+        var convId = agentContext.getConversationId();
+        trace.log(convId, "webSearch", "Searching: " + query);
+
+        try {
+            var response = webClient.get()
+                    .uri(props.searxng().url() + "/search", uriBuilder -> uriBuilder
+                            .queryParam("q", query)
+                            .queryParam("format", "json")
+                            .queryParam("pageno", 1)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(10));
+
+            if (response == null || !response.has("results")) {
+                return "No results found for: " + query;
+            }
+
+            var results = response.get("results");
+            var maxResults = props.searxng().maxResults();
+            var sb = new StringBuilder("Search results for \"" + query + "\":\n\n");
+            int count = 0;
+
+            for (JsonNode r : results) {
+                if (count++ >= maxResults) break;
+                var title = r.path("title").asText("(no title)");
+                var url = r.path("url").asText("");
+                var content = r.path("content").asText("").strip();
+                sb.append("[%d] %s\nURL: %s\nSnippet: %s\n\n".formatted(count, title, url, content));
+            }
+
+            return sb.toString().trim();
+        } catch (Exception ex) {
+            return "Search failed: " + ex.getMessage() +
+                    "\nMake sure SearXNG is running at " + props.searxng().url();
+        }
+    }
+}
