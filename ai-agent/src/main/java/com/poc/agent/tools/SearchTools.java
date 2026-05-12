@@ -1,6 +1,7 @@
 package com.poc.agent.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.poc.agent.config.AgentProperties;
 import com.poc.agent.safety.AgentContext;
 import com.poc.agent.safety.AgentTrace;
@@ -8,10 +9,9 @@ import com.poc.agent.safety.SafetyGuard;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
@@ -22,14 +22,16 @@ public class SearchTools {
     private final AgentTrace trace;
     private final AgentContext agentContext;
     private final SafetyGuard safetyGuard;
+    private final ObjectMapper objectMapper;
 
     public SearchTools(WebClient webClient, AgentProperties props, AgentTrace trace,
-                       AgentContext agentContext, SafetyGuard safetyGuard) {
+                       AgentContext agentContext, SafetyGuard safetyGuard, ObjectMapper objectMapper) {
         this.webClient = webClient;
         this.props = props;
         this.trace = trace;
         this.agentContext = agentContext;
         this.safetyGuard = safetyGuard;
+        this.objectMapper = objectMapper;
     }
 
     @Tool(description = """
@@ -43,15 +45,24 @@ public class SearchTools {
         trace.log(convId, "webSearch", "Searching: " + query);
 
         try {
-            var response = webClient.get()
-                    .uri(props.searxng().url() + "/search", uriBuilder -> uriBuilder
-                            .queryParam("q", query)
-                            .queryParam("format", "json")
-                            .queryParam("pageno", 1)
-                            .build())
+            var uri = UriComponentsBuilder.fromUriString(props.searxng().url() + "/search")
+                    .queryParam("q", query)
+                    .queryParam("format", "json")
+                    .queryParam("pageno", 1)
+                    .build()
+                    .toUri();
+
+            var raw = webClient.get()
+                    .uri(uri)
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
+                    .onStatus(status -> status.isError(), r -> r.bodyToMono(String.class)
+                            .map(body -> new RuntimeException(
+                                    "SearXNG returned HTTP " + r.statusCode().value() +
+                                    ". Body: " + body.substring(0, Math.min(body.length(), 300)))))
+                    .bodyToMono(String.class)
                     .block(Duration.ofSeconds(10));
+
+            var response = objectMapper.readTree(raw);
 
             if (response == null || !response.has("results")) {
                 return "No results found for: " + query;

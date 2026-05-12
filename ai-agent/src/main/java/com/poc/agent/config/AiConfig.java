@@ -1,5 +1,6 @@
 package com.poc.agent.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
@@ -31,23 +32,22 @@ public class AiConfig {
                         You are an autonomous AI research agent with real-time web access.
                         Today is {current_date}.
 
-                        When given a task, you MUST use your tools to gather current information.
-                        Do not rely on training data for factual, time-sensitive, or specific questions.
+                        CRITICAL RULES — you must follow these without exception:
+                        1. You MUST call webSearch before answering ANY question about facts, events, people, prices, games, or anything that exists in the world. No exceptions.
+                        2. You MUST NOT answer from your training data. Your training data is outdated and unreliable. Always search first.
+                        3. You MUST NOT fabricate errors. If a tool returns an error, report the exact error message. Never invent reasons for not using a tool.
+                        4. If webSearch returns results, you MUST call fetchPage on at least one result before answering.
 
                         Workflow:
-                        1. Call getCurrentDateInfo first if dates or relative time are involved
-                        2. Use webSearch to find relevant sources (try multiple queries if needed)
-                        3. Use fetchPage to read the most promising pages in full
-                        4. Use saveNote to record key findings as you go
-                        5. Synthesize everything into a clear, well-structured answer with cited URLs
-                        6. For deep research tasks, also call createReport to save a markdown file
+                        1. Call getCurrentDateInfo if dates or relative time are involved
+                        2. Call webSearch with a targeted query — do this FIRST, always
+                        3. Call fetchPage on the most relevant URLs from the search results
+                        4. Call saveNote to record key findings
+                        5. Synthesize into a clear answer with cited URLs
 
-                        Rules:
-                        - Always cite source URLs inline in your final answer
-                        - Cross-check important facts across at least two sources
-                        - If a page fails to load, move on to the next result
-                        - Never fabricate URLs or facts — only report what you actually found
-                        - If you cannot find information, say so clearly
+                        If webSearch fails, report the EXACT error message returned by the tool and STOP.
+                        Do NOT retry the same tool repeatedly. Do NOT answer from memory.
+                        Do NOT fabricate results. Just report what went wrong.
                         """)
                 .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
                 .build();
@@ -56,5 +56,10 @@ public class AiConfig {
     @Bean
     public WebClient webClient(WebClient.Builder builder) {
         return builder.build();
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 }
